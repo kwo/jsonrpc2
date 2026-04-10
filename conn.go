@@ -163,21 +163,12 @@ func (c *conn) Notify(ctx context.Context, method string, params interface{}) er
 	return err
 }
 
-func (c *conn) replier(req Message) Replier {
-	return func(ctx context.Context, result interface{}, err error) error {
-		call, ok := req.(*Call)
-		if !ok {
-			return nil
-		}
-
-		response, err := NewResponse(call.id, result, err)
-		if err != nil {
-			return err
-		}
-
-		_, err = c.write(ctx, response)
-		return err
+func (c *conn) reply(ctx context.Context, req *Call, result interface{}, err error) {
+	response, merr := NewResponse(req.id, result, err)
+	if merr != nil {
+		return
 	}
+	_, _ = c.write(ctx, response)
 }
 
 func (c *conn) write(ctx context.Context, msg Message) (int64, error) {
@@ -217,8 +208,9 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 
 		switch msg := msg.(type) {
 		case Request:
-			if err := handler(ctx, c.replier(msg), msg); err != nil {
-				c.fail(err)
+			result, err := handler(ctx, msg)
+			if call, ok := msg.(*Call); ok {
+				c.reply(ctx, call, result, err)
 			}
 
 		case *Response:

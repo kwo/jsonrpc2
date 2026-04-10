@@ -11,72 +11,43 @@ import (
 
 // Handler is invoked to handle incoming requests.
 //
-// The Replier sends a reply to the request and must be called exactly once.
-type Handler func(ctx context.Context, reply Replier, req Request) error
-
-// Replier is passed to handlers to allow them to reply to the request.
-//
-// If err is set then result will be ignored.
-type Replier func(ctx context.Context, result interface{}, err error) error
+// Returning a non-nil error for a Call will send an error response.
+// Returning a non-nil result will send a success response.
+// For Notifications, the return values are ignored.
+type Handler func(ctx context.Context, req Request) (result interface{}, err error)
 
 // MethodNotFoundHandler is a Handler that replies to all call requests with the
 // standard method not found response.
 //
 // This should normally be the final handler in a chain.
-func MethodNotFoundHandler(ctx context.Context, reply Replier, req Request) error {
-	return reply(ctx, nil, fmt.Errorf("%q: %w", req.Method(), ErrMethodNotFound))
-}
-
-// ReplyHandler creates a Handler that panics if the wrapped handler does
-// not call Reply for every request that it is passed.
-func ReplyHandler(handler Handler) (h Handler) {
-	h = Handler(func(ctx context.Context, reply Replier, req Request) error {
-		called := false
-		err := handler(ctx, func(ctx context.Context, result interface{}, err error) error {
-			if called {
-				panic(fmt.Errorf("request %q replied to more than once", req.Method()))
-			}
-			called = true
-
-			return reply(ctx, result, err)
-		}, req)
-		if !called {
-			panic(fmt.Errorf("request %q was never replied to", req.Method()))
-		}
-		return err
-	})
-
-	return h
+func MethodNotFoundHandler(_ context.Context, req Request) (interface{}, error) {
+	return nil, fmt.Errorf("%q: %w", req.Method(), ErrMethodNotFound)
 }
 
 // CancelHandler returns a handler that supports cancellation, and a function
 // that can be used to trigger canceling in progress requests.
-func CancelHandler(handler Handler) (h Handler, canceller func(id ID)) {
+func CancelHandler(handler Handler) (Handler, func(id ID)) {
 	var mu sync.Mutex
 	handling := make(map[ID]context.CancelFunc)
 
-	h = Handler(func(ctx context.Context, reply Replier, req Request) error {
+	h := Handler(func(ctx context.Context, req Request) (interface{}, error) {
 		if call, ok := req.(*Call); ok {
 			cancelCtx, cancel := context.WithCancel(ctx)
-			ctx = cancelCtx
-
 			mu.Lock()
 			handling[call.ID()] = cancel
 			mu.Unlock()
-
-			innerReply := reply
-			reply = func(ctx context.Context, result interface{}, err error) error {
+			defer func() {
 				mu.Lock()
 				delete(handling, call.ID())
 				mu.Unlock()
 				cancel()
-				return innerReply(ctx, result, err)
-			}
+			}()
+			return handler(cancelCtx, req)
 		}
-		return handler(ctx, reply, req)
+		return handler(ctx, req)
 	})
 
-	canceller = func(id ID) {
+	canceller := func(id ID) {
 		mu.Lock()
 		cancel, found := handling[id]
 		mu.Unlock()
@@ -88,34 +59,35 @@ func CancelHandler(handler Handler) (h Handler, canceller func(id ID)) {
 	return h, canceller
 }
 
-// AsyncHandler returns a handler that processes each request goes in its own
+// AsyncHandler returns a handler that processes each request in its own
 // goroutine.
 //
-// The handler returns immediately, without the request being processed.
-// Each request then waits for the previous request to finish before it starts.
-//
-// This allows the stream to unblock at the cost of unbounded goroutines
+// Each request waits for the previous request to finish before it starts.
+// This allows the read loop to unblock at the cost of unbounded goroutines
 // all stalled on the previous one.
-func AsyncHandler(handler Handler) (h Handler) {
+func AsyncHandler(handler Handler) Handler {
 	nextRequest := make(chan struct{})
 	close(nextRequest)
 
-	h = Handler(func(ctx context.Context, reply Replier, req Request) error {
+	return func(ctx context.Context, req Request) (interface{}, error) {
 		waitForPrevious := nextRequest
 		nextRequest = make(chan struct{})
 		unlockNext := nextRequest
-		innerReply := reply
-		reply = func(ctx context.Context, result interface{}, err error) error {
-			close(unlockNext)
-			return innerReply(ctx, result, err)
+
+		type result struct {
+			val interface{}
+			err error
 		}
+		done := make(chan result, 1)
 
 		go func() {
 			<-waitForPrevious
-			_ = handler(ctx, reply, req) // NOTE: error is silently discarded because the goroutine is detached from conn.run
+			val, err := handler(ctx, req)
+			close(unlockNext)
+			done <- result{val, err}
 		}()
-		return nil
-	})
 
-	return h
+		r := <-done
+		return r.val, r.err
+	}
 }

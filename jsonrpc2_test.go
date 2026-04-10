@@ -135,40 +135,40 @@ func run(ctx context.Context, nc io.ReadWriteCloser) jsonrpc2.Conn {
 }
 
 func testHandler() jsonrpc2.Handler {
-	return func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+	return func(ctx context.Context, req jsonrpc2.Request) (interface{}, error) {
 		switch req.Method() {
 		case methodNoArgs:
 			if len(req.Params()) > 0 {
-				return reply(ctx, nil, fmt.Errorf("expected no params: %w", jsonrpc2.ErrInvalidParams))
+				return nil, fmt.Errorf("expected no params: %w", jsonrpc2.ErrInvalidParams)
 			}
-			return reply(ctx, true, nil)
+			return true, nil
 
 		case methodOneString:
 			var v string
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
+				return nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err)
 			}
-			return reply(ctx, "got:"+v, nil)
+			return "got:" + v, nil
 
 		case methodOneNumber:
 			var v int
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
+				return nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err)
 			}
-			return reply(ctx, fmt.Sprintf("got:%d", v), nil)
+			return fmt.Sprintf("got:%d", v), nil
 
 		case methodJoin:
 			var v []string
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
+				return nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err)
 			}
-			return reply(ctx, path.Join(v...), nil)
+			return path.Join(v...), nil
 
 		default:
-			return jsonrpc2.MethodNotFoundHandler(ctx, reply, req)
+			return jsonrpc2.MethodNotFoundHandler(ctx, req)
 		}
 	}
 }
