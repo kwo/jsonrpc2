@@ -10,6 +10,7 @@ This library is a fork of [go.lsp.dev/jsonrpc2](https://github.com/go-language-s
 |---|:---:|:---:|:---:|:---:|
 | Importable | ✅ | ✅ | ❌ `internal` | ❌ `internal` |
 | Stdlib only (no external deps) | ✅ | ❌ `segmentio/encoding` | ❌ `internal/event` | ✅ |
+| LOC (Go, non-test) | 1,510 | 1,533 | 1,833 | 1,859 |
 | LSP header framing | ✅ | ✅ | ✅ | ✅ |
 | Raw JSON framing | ✅ | ✅ | ✅ | ✅ |
 | Bidirectional Conn | ✅ | ✅ | ✅ | ✅ |
@@ -36,6 +37,8 @@ This library is a fork of [go.lsp.dev/jsonrpc2](https://github.com/go-language-s
 | Built-in event tracing/metrics | — | — | ✅ | — |
 | Server.Shutdown (graceful stop) | — | — | — | ✅ |
 | Listener/Dialer interfaces | — | — | — | ✅ |
+
+LOC note: counts are approximate Go source lines for each implementation, excluding `*_test.go`. For `x/tools`, counts are for the `internal/jsonrpc2` and `internal/jsonrpc2_v2` directories only.
 
 ## References
 
