@@ -10,7 +10,7 @@ This library is a fork of [go.lsp.dev/jsonrpc2](https://github.com/go-language-s
 |---|:---:|:---:|:---:|:---:|
 | [Importable](## "Can be imported by external Go modules") | ✅ | ✅ | ❌ `internal` | ❌ `internal` |
 | [Stdlib only (no external deps)](## "Uses only the Go standard library, no third-party dependencies") | ✅ | ❌ `segmentio/encoding` | ❌ `internal/event` | ✅ |
-| [LOC (Go, non-test)](## "Approximate lines of Go source code, excluding test files") | 1,447 | 1,533 | 1,833 | 1,859 |
+| [LOC (Go, non-test)](## "Approximate lines of Go source code, excluding test files") | 1,460 | 1,533 | 1,833 | 1,859 |
 | [LSP header framing](## "Content-Length header framing as used by the Language Server Protocol") | ✅ | ✅ | ✅ | ✅ |
 | [Raw JSON framing](## "Newline-delimited JSON with no framing headers") | ✅ | ✅ | ✅ | ✅ |
 | [Bidirectional Conn](## "A single Conn can both send and receive requests") | ✅ | ✅ | ✅ | ✅ |
