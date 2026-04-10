@@ -19,20 +19,15 @@ import (
 // It manages the jsonrpc2 protocol, connecting responses back to their calls.
 type Conn interface {
 	// Call invokes the target method and waits for a response.
-	//
-	// The params will be marshaled to JSON before sending over the wire, and will
-	// be handed to the method invoked.
-	//
 	// The response will be unmarshaled from JSON into the result.
-	//
-	// The id returned will be unique from this connection, and can be used for
-	// logging or tracking.
 	Call(ctx context.Context, method string, params, result interface{}) (ID, error)
 
+	// AsyncCall starts a call to the target method but does not wait for the
+	// response. The returned AsyncCall can be used to await the result later.
+	// This allows multiple calls to be in flight concurrently.
+	AsyncCall(ctx context.Context, method string, params interface{}) (*AsyncCall, error)
+
 	// Notify invokes the target method but does not wait for a response.
-	//
-	// The params will be marshaled to JSON before sending over the wire, and will
-	// be handed to the method invoked.
 	Notify(ctx context.Context, method string, params interface{}) error
 
 	// Go starts a goroutine to handle the connection.
@@ -86,12 +81,53 @@ func NewConn(r Reader, w Writer, c io.Closer) Conn {
 	}
 }
 
+// AsyncCall represents an in-flight call that has been sent but whose
+// response has not yet been received.
+type AsyncCall struct {
+	id    ID
+	rchan <-chan *Response
+	conn  *conn
+}
+
+// ID returns the request ID of this call.
+func (ac *AsyncCall) ID() ID { return ac.id }
+
+// Await waits for the response and unmarshals it into result.
+func (ac *AsyncCall) Await(ctx context.Context, result interface{}) error {
+	select {
+	case resp := <-ac.rchan:
+		ac.conn.removePending(ac.id)
+		if resp.err != nil {
+			return resp.err
+		}
+		if result == nil || len(resp.result) == 0 {
+			return nil
+		}
+		if err := json.Unmarshal(resp.result, result); err != nil {
+			return fmt.Errorf("unmarshaling result: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		ac.conn.removePending(ac.id)
+		return ctx.Err()
+	}
+}
+
 // Call implements Conn.
-func (c *conn) Call(ctx context.Context, method string, params, result interface{}) (id ID, err error) {
-	id = NewNumberID(atomic.AddInt32(&c.seq, 1))
+func (c *conn) Call(ctx context.Context, method string, params, result interface{}) (ID, error) {
+	ac, err := c.AsyncCall(ctx, method, params)
+	if err != nil {
+		return ac.ID(), err
+	}
+	return ac.ID(), ac.Await(ctx, result)
+}
+
+// AsyncCall implements Conn.
+func (c *conn) AsyncCall(ctx context.Context, method string, params interface{}) (*AsyncCall, error) {
+	id := NewNumberID(atomic.AddInt32(&c.seq, 1))
 	call, err := NewCall(id, method, params)
 	if err != nil {
-		return id, fmt.Errorf("marshaling call parameters: %w", err)
+		return &AsyncCall{id: id}, fmt.Errorf("marshaling call parameters: %w", err)
 	}
 
 	rchan := make(chan *Response, 1)
@@ -100,36 +136,19 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 	c.pending[id] = rchan
 	c.pendingMu.Unlock()
 
-	defer func() {
-		c.pendingMu.Lock()
-		delete(c.pending, id)
-		c.pendingMu.Unlock()
-	}()
-
 	_, err = c.write(ctx, call)
 	if err != nil {
-		return id, err
+		c.removePending(id)
+		return &AsyncCall{id: id}, err
 	}
 
-	select {
-	case resp := <-rchan:
-		if resp.err != nil {
-			return id, resp.err
-		}
+	return &AsyncCall{id: id, rchan: rchan, conn: c}, nil
+}
 
-		if result == nil || len(resp.result) == 0 {
-			return id, nil
-		}
-
-		if err := json.Unmarshal(resp.result, result); err != nil {
-			return id, fmt.Errorf("unmarshaling result: %w", err)
-		}
-
-		return id, nil
-
-	case <-ctx.Done():
-		return id, ctx.Err()
-	}
+func (c *conn) removePending(id ID) {
+	c.pendingMu.Lock()
+	delete(c.pending, id)
+	c.pendingMu.Unlock()
 }
 
 // Notify implements Conn.
