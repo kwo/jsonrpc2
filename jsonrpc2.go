@@ -4,4 +4,4 @@
 // Package jsonrpc2 is an implementation of the JSON-RPC 2 specification for Go.
 //
 // https://www.jsonrpc.org/specification
-package jsonrpc2 // import "go.lsp.dev/jsonrpc2"
+package jsonrpc2 // import "github.com/kwo/jsonrpc2"

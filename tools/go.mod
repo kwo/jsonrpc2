@@ -1,4 +1,4 @@
-module go.lsp.dev/jsonrpc2/tools
+module github.com/kwo/jsonrpc2/tools
 
 go 1.17
 

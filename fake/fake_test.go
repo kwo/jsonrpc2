@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"go.lsp.dev/jsonrpc2"
-	"go.lsp.dev/jsonrpc2/fake"
+	"github.com/kwo/jsonrpc2"
+	"github.com/kwo/jsonrpc2/fake"
 )
 
 type msg struct {

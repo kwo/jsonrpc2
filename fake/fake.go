@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"go.lsp.dev/jsonrpc2"
+	"github.com/kwo/jsonrpc2"
 )
 
 // Connector is the interface used to connect to a server.

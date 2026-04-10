@@ -17,10 +17,9 @@ output:
 linters-settings:
   dupl:
     threshold: 100
-  # errcheck:
-  #   check-type-assertions: true
-  #   check-blank: true
-  #   exclude: .errcheckignore
+  errcheck:
+    exclude-functions:
+      - (*github.com/kwo/jsonrpc2.Request).Reply
   funlen:
     lines: 100
     statements: 60
@@ -54,7 +53,7 @@ linters-settings:
   gofmt:
     simplify: true
   goimports:
-    local-prefixes: go.lsp.dev/jsonrpc2
+    local-prefixes: github.com/kwo/jsonrpc2
   golint:
     min-confidence: 0.3
   govet:

@@ -11,7 +11,7 @@ import (
 
 	"github.com/segmentio/encoding/json"
 
-	"go.lsp.dev/jsonrpc2"
+	"github.com/kwo/jsonrpc2"
 )
 
 var wireIDTestData = []struct {

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"go.lsp.dev/jsonrpc2"
+	"github.com/kwo/jsonrpc2"
 )
 
 func TestIdleTimeout(t *testing.T) {

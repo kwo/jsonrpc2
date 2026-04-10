@@ -1,8 +1,6 @@
-module go.lsp.dev/jsonrpc2
+module github.com/kwo/jsonrpc2
 
 go 1.17
-
-replace go.lsp.dev/pkg => ../pkg
 
 require github.com/segmentio/encoding v0.3.4
 
