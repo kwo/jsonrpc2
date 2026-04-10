@@ -4,9 +4,8 @@
 package jsonrpc2
 
 import (
+	"encoding/json"
 	"fmt"
-
-	"github.com/segmentio/encoding/json"
 )
 
 // Version represents a JSON-RPC version.

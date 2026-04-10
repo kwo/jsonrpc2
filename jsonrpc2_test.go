@@ -6,6 +6,7 @@ package jsonrpc2_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -14,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/kwo/jsonrpc2"
-	"github.com/segmentio/encoding/json"
 )
 
 const (
@@ -146,7 +146,6 @@ func testHandler() jsonrpc2.Handler {
 		case methodOneString:
 			var v string
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
-			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
 				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}
@@ -155,7 +154,6 @@ func testHandler() jsonrpc2.Handler {
 		case methodOneNumber:
 			var v int
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
-			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
 				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}
@@ -164,7 +162,6 @@ func testHandler() jsonrpc2.Handler {
 		case methodJoin:
 			var v []string
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
-			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
 				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}

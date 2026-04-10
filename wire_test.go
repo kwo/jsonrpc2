@@ -5,12 +5,12 @@ package jsonrpc2_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/kwo/jsonrpc2"
-	"github.com/segmentio/encoding/json"
 )
 
 var wireIDTestData = []struct { //nolint:gochecknoglobals // test data
@@ -85,7 +85,6 @@ func TestIDDecode(t *testing.T) {
 
 			var got *jsonrpc2.ID
 			dec := json.NewDecoder(bytes.NewReader(tt.encoded))
-			dec.ZeroCopy()
 			if err := dec.Decode(&got); err != nil {
 				t.Fatal(err)
 			}

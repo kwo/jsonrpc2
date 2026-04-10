@@ -5,10 +5,9 @@ package jsonrpc2
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/segmentio/encoding/json"
 )
 
 // Message is the interface to all JSON-RPC message types.
@@ -104,7 +103,6 @@ func (c Call) MarshalJSON() ([]byte, error) {
 func (c *Call) UnmarshalJSON(data []byte) error {
 	var req wireRequest
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.ZeroCopy()
 	if err := dec.Decode(&req); err != nil {
 		return fmt.Errorf("unmarshaling call: %w", err)
 	}
@@ -185,7 +183,6 @@ func (r Response) MarshalJSON() ([]byte, error) {
 func (r *Response) UnmarshalJSON(data []byte) error {
 	var resp wireResponse
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.ZeroCopy()
 	if err := dec.Decode(&resp); err != nil {
 		return fmt.Errorf("unmarshaling jsonrpc response: %w", err)
 	}
@@ -282,7 +279,6 @@ func (n Notification) MarshalJSON() ([]byte, error) {
 func (n *Notification) UnmarshalJSON(data []byte) error {
 	var req wireRequest
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.ZeroCopy()
 	if err := dec.Decode(&req); err != nil {
 		return fmt.Errorf("unmarshaling notification: %w", err)
 	}
@@ -299,7 +295,6 @@ func (n *Notification) UnmarshalJSON(data []byte) error {
 func DecodeMessage(data []byte) (Message, error) {
 	var msg combined
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.ZeroCopy()
 	if err := dec.Decode(&msg); err != nil {
 		return nil, fmt.Errorf("unmarshaling jsonrpc message: %w", err)
 	}
