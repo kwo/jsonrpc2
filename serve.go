@@ -5,6 +5,7 @@ package jsonrpc2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -47,16 +48,20 @@ func HandlerServer(h Handler) StreamServer {
 //
 // If idleTimeout is non-zero, ListenAndServe exits after there are no clients for
 // this duration, otherwise it exits only on error.
-func ListenAndServe(ctx context.Context, network, addr string, server StreamServer, idleTimeout time.Duration) error {
+func ListenAndServe(ctx context.Context, network, addr string, server StreamServer, idleTimeout time.Duration) (retErr error) {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, network, addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen %s:%s: %w", network, addr, err)
 	}
-	defer ln.Close() //nolint:errcheck // best-effort cleanup
+	defer func() {
+		retErr = errors.Join(retErr, ln.Close())
+	}()
 
 	if network == "unix" {
-		defer os.Remove(addr) //nolint:errcheck // best-effort cleanup
+		defer func() {
+			retErr = errors.Join(retErr, os.Remove(addr))
+		}()
 	}
 
 	return Serve(ctx, ln, server, idleTimeout)
@@ -104,16 +109,15 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 			stream := NewStream(netConn)
 			go func() {
 				conn := NewConn(stream)
-				closedConns <- server.ServeStream(ctx, conn)
-				_ = stream.Close() // best-effort cleanup
+				serveErr := server.ServeStream(ctx, conn)
+				closeErr := stream.Close()
+				closedConns <- errors.Join(serveErr, closeErr)
 			}()
 
 		case err := <-doneListening:
 			return err
 
 		case <-closedConns:
-			// if !isClosingError(err) {
-			// }
 
 			activeConns--
 			if activeConns == 0 {

@@ -6,9 +6,9 @@ package fake
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 
 	"github.com/kwo/jsonrpc2"
@@ -37,21 +37,14 @@ func (l *connList) add(conn jsonrpc2.Conn) {
 // Close closes conns.
 func (l *connList) Close() error {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 
-	var errmsgs []string
+	var errs []error
 	for _, conn := range l.conns {
-		if err := conn.Close(); err != nil {
-			errmsgs = append(errmsgs, err.Error())
-		}
+		errs = append(errs, conn.Close())
 	}
 
-	l.mu.Unlock()
-
-	if len(errmsgs) > 0 {
-		return fmt.Errorf("closing errors:\n%s", strings.Join(errmsgs, "\n"))
-	}
-
-	return nil
+	return errors.Join(errs...)
 }
 
 // TCPServer is a helper for executing tests against a remote jsonrpc2

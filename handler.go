@@ -112,7 +112,7 @@ func AsyncHandler(handler Handler) (h Handler) {
 
 		go func() {
 			<-waitForPrevious
-			_ = handler(ctx, reply, req)
+			_ = handler(ctx, reply, req) // NOTE: error is silently discarded because the goroutine is detached from conn.run
 		}()
 		return nil
 	})
