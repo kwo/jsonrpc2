@@ -71,7 +71,8 @@ type TCPServer struct {
 //
 // It panics on any error.
 func NewTCPServer(ctx context.Context, server jsonrpc2.StreamServer, framer jsonrpc2.Framer) *TCPServer {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(fmt.Sprintf("servertest: failed to listen: %v", err))
 	}
@@ -80,7 +81,7 @@ func NewTCPServer(ctx context.Context, server jsonrpc2.StreamServer, framer json
 		framer = jsonrpc2.NewStream
 	}
 
-	go jsonrpc2.Serve(ctx, ln, server, 0)
+	go jsonrpc2.Serve(ctx, ln, server, 0) //nolint:errcheck // fire-and-forget goroutine
 
 	return &TCPServer{
 		connList: &connList{},
@@ -91,8 +92,9 @@ func NewTCPServer(ctx context.Context, server jsonrpc2.StreamServer, framer json
 }
 
 // Connect dials the test server and returns a jsonrpc2 Connection that is ready for use.
-func (s *TCPServer) Connect(context.Context) jsonrpc2.Conn {
-	netConn, err := net.Dial("tcp", s.Addr)
+func (s *TCPServer) Connect(ctx context.Context) jsonrpc2.Conn {
+	var d net.Dialer
+	netConn, err := d.DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		panic(fmt.Sprintf("servertest: failed to connect to test instance: %v", err))
 	}
@@ -131,7 +133,7 @@ func (s *PipeServer) Connect(ctx context.Context) jsonrpc2.Conn {
 	serverStream := s.framer(sPipe)
 	serverConn := jsonrpc2.NewConn(serverStream)
 	s.add(serverConn)
-	go s.server.ServeStream(ctx, serverConn)
+	go s.server.ServeStream(ctx, serverConn) //nolint:errcheck // fire-and-forget goroutine
 
 	clientStream := s.framer(cPipe)
 	clientConn := jsonrpc2.NewConn(clientStream)

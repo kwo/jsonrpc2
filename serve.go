@@ -48,14 +48,15 @@ func HandlerServer(h Handler) StreamServer {
 // If idleTimeout is non-zero, ListenAndServe exits after there are no clients for
 // this duration, otherwise it exits only on error.
 func ListenAndServe(ctx context.Context, network, addr string, server StreamServer, idleTimeout time.Duration) error {
-	ln, err := net.Listen(network, addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, network, addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen %s:%s: %w", network, addr, err)
 	}
-	defer ln.Close()
+	defer ln.Close() //nolint:errcheck // best-effort cleanup
 
 	if network == "unix" {
-		defer os.Remove(addr)
+		defer os.Remove(addr) //nolint:errcheck // best-effort cleanup
 	}
 
 	return Serve(ctx, ln, server, idleTimeout)
@@ -104,7 +105,7 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 			go func() {
 				conn := NewConn(stream)
 				closedConns <- server.ServeStream(ctx, conn)
-				stream.Close()
+				_ = stream.Close() // best-effort cleanup
 			}()
 
 		case err := <-doneListening:

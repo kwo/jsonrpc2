@@ -69,6 +69,7 @@ func CancelHandler(handler Handler) (h Handler, canceller func(id ID)) {
 				mu.Lock()
 				delete(handling, call.ID())
 				mu.Unlock()
+				cancel()
 				return innerReply(ctx, result, err)
 			}
 		}

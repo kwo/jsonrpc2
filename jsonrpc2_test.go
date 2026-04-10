@@ -13,9 +13,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/segmentio/encoding/json"
-
 	"github.com/kwo/jsonrpc2"
+	"github.com/segmentio/encoding/json"
 )
 
 const (
@@ -31,7 +30,7 @@ type callTest struct {
 	expect interface{}
 }
 
-var callTests = []callTest{
+var callTests = []callTest{ //nolint:gochecknoglobals // test data
 	{
 		method: methodNoArgs,
 		params: nil,
@@ -114,8 +113,12 @@ func prepare(ctx context.Context, t *testing.T) (a, b jsonrpc2.Conn, done func()
 	a = run(ctx, aPipe)
 	b = run(ctx, bPipe)
 	done = func() {
-		a.Close()
-		b.Close()
+		if err := a.Close(); err != nil {
+			t.Error(err)
+		}
+		if err := b.Close(); err != nil {
+			t.Error(err)
+		}
 		<-a.Done()
 		<-b.Done()
 	}
@@ -145,7 +148,7 @@ func testHandler() jsonrpc2.Handler {
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%s: %w", jsonrpc2.ErrParse, err))
+				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}
 			return reply(ctx, "got:"+v, nil)
 
@@ -154,7 +157,7 @@ func testHandler() jsonrpc2.Handler {
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%s: %w", jsonrpc2.ErrParse, err))
+				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}
 			return reply(ctx, fmt.Sprintf("got:%d", v), nil)
 
@@ -163,7 +166,7 @@ func testHandler() jsonrpc2.Handler {
 			dec := json.NewDecoder(bytes.NewReader(req.Params()))
 			dec.ZeroCopy()
 			if err := dec.Decode(&v); err != nil {
-				return reply(ctx, nil, fmt.Errorf("%s: %w", jsonrpc2.ErrParse, err))
+				return reply(ctx, nil, fmt.Errorf("%w: %w", jsonrpc2.ErrParse, err))
 			}
 			return reply(ctx, path.Join(v...), nil)
 

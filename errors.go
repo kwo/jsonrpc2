@@ -55,16 +55,16 @@ func Errorf(c Code, format string, args ...interface{}) *Error {
 	}
 }
 
-// constErr represents a error constant.
-type constErr string
+// constError represents an error constant.
+type constError string
 
-// compile time check whether the constErr implements error interface.
-var _ error = (*constErr)(nil)
+// compile time check whether the constError implements error interface.
+var _ error = (*constError)(nil)
 
 // Error implements error.Error.
-func (e constErr) Error() string { return string(e) }
+func (e constError) Error() string { return string(e) }
 
 const (
 	// ErrIdleTimeout is returned when serving timed out waiting for new connections.
-	ErrIdleTimeout = constErr("timed out waiting for new connections")
+	ErrIdleTimeout = constError("timed out waiting for new connections")
 )

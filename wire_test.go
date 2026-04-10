@@ -9,12 +9,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/segmentio/encoding/json"
-
 	"github.com/kwo/jsonrpc2"
+	"github.com/segmentio/encoding/json"
 )
 
-var wireIDTestData = []struct {
+var wireIDTestData = []struct { //nolint:gochecknoglobals // test data
 	name    string
 	id      jsonrpc2.ID
 	encoded []byte

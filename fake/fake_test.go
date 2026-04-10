@@ -27,10 +27,18 @@ func TestTestServer(t *testing.T) {
 	server := jsonrpc2.HandlerServer(fakeHandler)
 
 	tcpTS := fake.NewTCPServer(ctx, server, nil)
-	defer tcpTS.Close()
+	defer func() {
+		if err := tcpTS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 
 	pipeTS := fake.NewPipeServer(ctx, server, nil)
-	defer pipeTS.Close()
+	defer func() {
+		if err := pipeTS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 
 	tests := map[string]struct {
 		connector fake.Connector

@@ -241,5 +241,5 @@ func (c *conn) Err() error {
 // fail sets a failure condition on the stream and closes it.
 func (c *conn) fail(err error) {
 	c.err.Store(err)
-	c.stream.Close()
+	_ = c.stream.Close() // best-effort cleanup on failure
 }
