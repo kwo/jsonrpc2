@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2021 The Go Language Server Authors
+// SPDX-FileCopyrightText: 2026 Karl Ostendorf
 // SPDX-License-Identifier: BSD-3-Clause
 
 package fake_test

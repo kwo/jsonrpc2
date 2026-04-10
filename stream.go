@@ -1,4 +1,6 @@
 // SPDX-FileCopyrightText: 2018 The Go Language Server Authors
+// SPDX-FileCopyrightText: 2019 The Go Authors
+// SPDX-FileCopyrightText: 2026 Karl Ostendorf
 // SPDX-License-Identifier: BSD-3-Clause
 
 package jsonrpc2
