@@ -23,5 +23,4 @@ Hello, World!
 notification sent
 ```
 
-There is no need to start the plugin manually. The app launches it as a
-child process and connects over its stdin/stdout using `RawFramer`.
+There is no need to start the plugin manually. The app launches it as a child process and connects over its stdin/stdout using `RawFramer`.

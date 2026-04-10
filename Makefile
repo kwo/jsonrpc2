@@ -3,6 +3,7 @@
 .PHONY: test
 test:
 	go test -race -count=2 ./...
+	cd example && go test -race -count=2 ./...
 
 .PHONY: lint
 lint:
