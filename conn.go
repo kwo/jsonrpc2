@@ -58,10 +58,11 @@ type Conn interface {
 
 type conn struct {
 	seq       int32              // access atomically
-	writeMu   sync.Mutex         // protects writes to the writer
+	writeMu   sync.Mutex         // protects writes to the writer and writeErr
 	reader    Reader             // reads messages
 	writer    Writer             // writes messages
 	closer    io.Closer          // closes the underlying transport
+	writeErr  error              // first write error; once set, all writes fail
 	pendingMu sync.Mutex         // protects the pending map
 	pending   map[ID]chan *Response
 
@@ -175,20 +176,25 @@ func (c *conn) replier(req Message) Replier {
 		}
 
 		_, err = c.write(ctx, response)
-		if err != nil {
-			// TODO(iancottrell): if a stream write fails, we really need to shut down the whole stream
-			return err
-		}
-		return nil
+		return err
 	}
 }
 
 func (c *conn) write(ctx context.Context, msg Message) (int64, error) {
 	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	// If a previous write failed, all subsequent writes fail immediately.
+	if c.writeErr != nil {
+		return 0, c.writeErr
+	}
+
 	n, err := c.writer.Write(ctx, msg)
-	c.writeMu.Unlock()
 	if err != nil {
-		return 0, fmt.Errorf("write to stream: %w", err)
+		c.writeErr = fmt.Errorf("write to stream: %w", err)
+		// Close the transport so the read loop exits and pending calls unblock.
+		_ = c.closer.Close()
+		return 0, c.writeErr
 	}
 
 	return n, nil
