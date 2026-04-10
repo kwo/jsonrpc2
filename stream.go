@@ -15,14 +15,12 @@ import (
 
 const (
 	// HdrContentLength is the HTTP header name of the length of the content part in bytes. This header is required.
-	// This entity header indicates the size of the entity-body, in bytes, sent to the recipient.
 	//
 	// RFC 7230, section 3.3.2: Content-Length:
 	//  https://tools.ietf.org/html/rfc7230#section-3.3.2
 	HdrContentLength = "Content-Length"
 
 	// HeaderContentType is the mime type of the content part. Defaults to "application/vscode-jsonrpc; charset=utf-8".
-	// This entity header is used to indicate the media type of the resource.
 	//
 	// RFC 7231, section 3.1.1.5: Content-Type:
 	//  https://tools.ietf.org/html/rfc7231#section-3.1.1.5
@@ -32,50 +30,46 @@ const (
 	HdrContentSeparator = "\r\n\r\n"
 )
 
-// Framer wraps a network connection up into a Stream.
-//
-// It is responsible for the framing and encoding of messages into wire form.
-// NewRawStream and NewStream are implementations of a Framer.
-type Framer func(conn io.ReadWriteCloser) Stream
-
-// Stream abstracts the transport mechanics from the JSON RPC protocol.
-//
-// A Conn reads and writes messages using the stream it was provided on
-// construction, and assumes that each call to Read or Write fully transfers
-// a single message, or returns an error.
-//
-// A stream is not safe for concurrent use, it is expected it will be used by
-// a single Conn in a safe manner.
-type Stream interface {
-	// Read gets the next message from the stream.
+// Reader reads JSON-RPC messages.
+type Reader interface {
 	Read(context.Context) (Message, int64, error)
+}
 
-	// Write sends a message to the stream.
+// Writer writes JSON-RPC messages.
+type Writer interface {
 	Write(context.Context, Message) (int64, error)
-
-	// Close closes the connection.
-	// Any blocked Read or Write operations will be unblocked and return errors.
-	Close() error
 }
 
-type rawStream struct {
-	conn io.ReadWriteCloser
-	in   *json.Decoder
+// Framer produces Readers and Writers for a given transport.
+type Framer interface {
+	Reader(io.Reader) Reader
+	Writer(io.Writer) Writer
 }
 
-// NewRawStream returns a Stream built on top of a io.ReadWriteCloser.
-//
-// The messages are sent with no wrapping, and rely on json decode consistency
-// to determine message boundaries.
-func NewRawStream(conn io.ReadWriteCloser) Stream {
-	return &rawStream{
-		conn: conn,
-		in:   json.NewDecoder(conn),
-	}
+// HeaderFramer returns a Framer that uses LSP-style Content-Length headers.
+func HeaderFramer() Framer { return headerFramer{} }
+
+// RawFramer returns a Framer that uses raw JSON with no framing headers.
+func RawFramer() Framer { return rawFramer{} }
+
+// headerFramer implements Framer for LSP-style header framing.
+type headerFramer struct{}
+
+func (headerFramer) Reader(r io.Reader) Reader { return &headerReader{in: bufio.NewReader(r)} }
+func (headerFramer) Writer(w io.Writer) Writer  { return &headerWriter{out: w} }
+
+// rawFramer implements Framer for raw JSON framing.
+type rawFramer struct{}
+
+func (rawFramer) Reader(r io.Reader) Reader { return &rawReader{in: json.NewDecoder(r)} }
+func (rawFramer) Writer(w io.Writer) Writer  { return &rawWriter{out: w} }
+
+// rawReader reads raw JSON messages.
+type rawReader struct {
+	in *json.Decoder
 }
 
-// Read implements Stream.Read.
-func (s *rawStream) Read(ctx context.Context) (Message, int64, error) {
+func (r *rawReader) Read(ctx context.Context) (Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
@@ -83,7 +77,7 @@ func (s *rawStream) Read(ctx context.Context) (Message, int64, error) {
 	}
 
 	var raw json.RawMessage
-	if err := s.in.Decode(&raw); err != nil {
+	if err := r.in.Decode(&raw); err != nil {
 		return nil, 0, fmt.Errorf("decoding raw message: %w", err)
 	}
 
@@ -91,8 +85,12 @@ func (s *rawStream) Read(ctx context.Context) (Message, int64, error) {
 	return msg, int64(len(raw)), err
 }
 
-// Write implements Stream.Write.
-func (s *rawStream) Write(ctx context.Context, msg Message) (int64, error) {
+// rawWriter writes raw JSON messages.
+type rawWriter struct {
+	out io.Writer
+}
+
+func (w *rawWriter) Write(ctx context.Context, msg Message) (int64, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
@@ -104,7 +102,7 @@ func (s *rawStream) Write(ctx context.Context, msg Message) (int64, error) {
 		return 0, fmt.Errorf("marshaling message: %w", err)
 	}
 
-	n, err := s.conn.Write(data)
+	n, err := w.out.Write(data)
 	if err != nil {
 		return 0, fmt.Errorf("write to stream: %w", err)
 	}
@@ -112,47 +110,27 @@ func (s *rawStream) Write(ctx context.Context, msg Message) (int64, error) {
 	return int64(n), nil
 }
 
-// Close implements Stream.Close.
-func (s *rawStream) Close() error {
-	return s.conn.Close()
+// headerReader reads LSP-framed messages.
+type headerReader struct {
+	in *bufio.Reader
 }
 
-type stream struct {
-	conn io.ReadWriteCloser
-	in   *bufio.Reader
-}
-
-// NewStream returns a Stream built on top of a io.ReadWriteCloser.
-//
-// The messages are sent with HTTP content length and MIME type headers.
-// This is the format used by LSP and others.
-func NewStream(conn io.ReadWriteCloser) Stream {
-	return &stream{
-		conn: conn,
-		in:   bufio.NewReader(conn),
-	}
-}
-
-// Read implements Stream.Read.
-func (s *stream) Read(ctx context.Context) (Message, int64, error) {
+func (r *headerReader) Read(ctx context.Context) (Message, int64, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
 	default:
 	}
 
-	var total int64
-	var length int64
-	// read the header, stop on the first empty line
+	var total, length int64
 	for {
-		line, err := s.in.ReadString('\n')
+		line, err := r.in.ReadString('\n')
 		total += int64(len(line))
 		if err != nil {
 			return nil, total, fmt.Errorf("failed reading header line: %w", err)
 		}
 
 		line = strings.TrimSpace(line)
-		// check we have a header line
 		if line == "" {
 			break
 		}
@@ -181,7 +159,7 @@ func (s *stream) Read(ctx context.Context) (Message, int64, error) {
 	}
 
 	data := make([]byte, length)
-	if _, err := io.ReadFull(s.in, data); err != nil {
+	if _, err := io.ReadFull(r.in, data); err != nil {
 		return nil, total, fmt.Errorf("read full of data: %w", err)
 	}
 
@@ -190,8 +168,12 @@ func (s *stream) Read(ctx context.Context) (Message, int64, error) {
 	return msg, total, err
 }
 
-// Write implements Stream.Write.
-func (s *stream) Write(ctx context.Context, msg Message) (int64, error) {
+// headerWriter writes LSP-framed messages.
+type headerWriter struct {
+	out io.Writer
+}
+
+func (w *headerWriter) Write(ctx context.Context, msg Message) (int64, error) {
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
@@ -203,22 +185,17 @@ func (s *stream) Write(ctx context.Context, msg Message) (int64, error) {
 		return 0, fmt.Errorf("marshaling message: %w", err)
 	}
 
-	n, err := fmt.Fprintf(s.conn, "%s: %v%s", HdrContentLength, len(data), HdrContentSeparator)
+	n, err := fmt.Fprintf(w.out, "%s: %v%s", HdrContentLength, len(data), HdrContentSeparator)
 	total := int64(n)
 	if err != nil {
 		return 0, fmt.Errorf("write data to conn: %w", err)
 	}
 
-	n, err = s.conn.Write(data)
+	n, err = w.out.Write(data)
 	total += int64(n)
 	if err != nil {
 		return 0, fmt.Errorf("write data to conn: %w", err)
 	}
 
 	return total, nil
-}
-
-// Close implements Stream.Close.
-func (s *stream) Close() error {
-	return s.conn.Close()
 }

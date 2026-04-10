@@ -127,8 +127,8 @@ func prepare(ctx context.Context, t *testing.T) (a, b jsonrpc2.Conn, done func()
 }
 
 func run(ctx context.Context, nc io.ReadWriteCloser) jsonrpc2.Conn {
-	stream := jsonrpc2.NewStream(nc)
-	conn := jsonrpc2.NewConn(stream)
+	framer := jsonrpc2.HeaderFramer()
+	conn := jsonrpc2.NewConn(framer.Reader(nc), framer.Writer(nc), nc)
 	conn.Go(ctx, testHandler())
 
 	return conn

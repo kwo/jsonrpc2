@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 )
@@ -43,7 +44,7 @@ type Conn interface {
 	// future.
 	Go(ctx context.Context, handler Handler)
 
-	// Close closes the connection and it's underlying stream.
+	// Close closes the connection and its underlying stream.
 	//
 	// It does not wait for the close to complete, use the Done() channel for
 	// that.
@@ -61,39 +62,38 @@ type Conn interface {
 }
 
 type conn struct {
-	seq       int32                 // access atomically
-	writeMu   sync.Mutex            // protects writes to the stream
-	stream    Stream                // supplied stream
-	pendingMu sync.Mutex            // protects the pending map
-	pending   map[ID]chan *Response // holds the pending response channel with the ID as the key.
+	seq       int32              // access atomically
+	writeMu   sync.Mutex         // protects writes to the writer
+	reader    Reader             // reads messages
+	writer    Writer             // writes messages
+	closer    io.Closer          // closes the underlying transport
+	pendingMu sync.Mutex         // protects the pending map
+	pending   map[ID]chan *Response
 
-	done chan struct{} // closed when done
-	err  atomic.Value  // holds run error
+	done chan struct{}
+	err  atomic.Value
 }
 
-// NewConn creates a new connection object around the supplied stream.
-func NewConn(s Stream) Conn {
-	conn := &conn{
-		stream:  s,
+// NewConn creates a new connection object around the supplied reader, writer,
+// and closer.
+func NewConn(r Reader, w Writer, c io.Closer) Conn {
+	return &conn{
+		reader:  r,
+		writer:  w,
+		closer:  c,
 		pending: make(map[ID]chan *Response),
 		done:    make(chan struct{}),
 	}
-	return conn
 }
 
 // Call implements Conn.
 func (c *conn) Call(ctx context.Context, method string, params, result interface{}) (id ID, err error) {
-	// generate a new request identifier
 	id = NewNumberID(atomic.AddInt32(&c.seq, 1))
 	call, err := NewCall(id, method, params)
 	if err != nil {
 		return id, fmt.Errorf("marshaling call parameters: %w", err)
 	}
 
-	// We have to add ourselves to the pending map before we send, otherwise we
-	// are racing the response. Also add a buffer to rchan, so that if we get a
-	// wire response between the time this call is cancelled and id is deleted
-	// from c.pending, the send to rchan will not block.
 	rchan := make(chan *Response, 1)
 
 	c.pendingMu.Lock()
@@ -106,17 +106,13 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 		c.pendingMu.Unlock()
 	}()
 
-	// now we are ready to send
 	_, err = c.write(ctx, call)
 	if err != nil {
-		// sending failed, we will never get a response, so don't leave it pending
 		return id, err
 	}
 
-	// now wait for the response
 	select {
 	case resp := <-rchan:
-		// is it an error response?
 		if resp.err != nil {
 			return id, resp.err
 		}
@@ -137,14 +133,13 @@ func (c *conn) Call(ctx context.Context, method string, params, result interface
 }
 
 // Notify implements Conn.
-func (c *conn) Notify(ctx context.Context, method string, params interface{}) (err error) {
+func (c *conn) Notify(ctx context.Context, method string, params interface{}) error {
 	notify, err := NewNotification(method, params)
 	if err != nil {
 		return fmt.Errorf("marshaling notify parameters: %w", err)
 	}
 
 	_, err = c.write(ctx, notify)
-
 	return err
 }
 
@@ -152,7 +147,6 @@ func (c *conn) replier(req Message) Replier {
 	return func(ctx context.Context, result interface{}, err error) error {
 		call, ok := req.(*Call)
 		if !ok {
-			// request was a notify, no need to respond
 			return nil
 		}
 
@@ -172,7 +166,7 @@ func (c *conn) replier(req Message) Replier {
 
 func (c *conn) write(ctx context.Context, msg Message) (int64, error) {
 	c.writeMu.Lock()
-	n, err := c.stream.Write(ctx, msg)
+	n, err := c.writer.Write(ctx, msg)
 	c.writeMu.Unlock()
 	if err != nil {
 		return 0, fmt.Errorf("write to stream: %w", err)
@@ -190,10 +184,8 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 	defer close(c.done)
 
 	for {
-		// get the next message
-		msg, _, err := c.stream.Read(ctx)
+		msg, _, err := c.reader.Read(ctx)
 		if err != nil {
-			// The stream failed, we cannot continue.
 			c.fail(err)
 			return
 		}
@@ -205,8 +197,6 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 			}
 
 		case *Response:
-			// If method is not set, this should be a response, in which case we must
-			// have an id to send the response back to the caller.
 			c.pendingMu.Lock()
 			rchan, ok := c.pending[msg.id]
 			c.pendingMu.Unlock()
@@ -219,7 +209,7 @@ func (c *conn) run(ctx context.Context, handler Handler) {
 
 // Close implements Conn.
 func (c *conn) Close() error {
-	return c.stream.Close()
+	return c.closer.Close()
 }
 
 // Done implements Conn.
@@ -235,7 +225,6 @@ func (c *conn) Err() error {
 	return nil
 }
 
-// fail sets a failure condition on the stream and closes it.
 func (c *conn) fail(err error) {
-	c.err.Store(errors.Join(err, c.stream.Close()))
+	c.err.Store(errors.Join(err, c.closer.Close()))
 }

@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-// NOTE: This file provides an experimental API for serving multiple remote
-// jsonrpc2 clients over the network. For now, it is intentionally similar to
-// net/http, but that may change in the future as we figure out the correct
-// semantics.
-
 // StreamServer is used to serve incoming jsonrpc2 clients communicating over
 // a newly created connection.
 type StreamServer interface {
@@ -28,8 +23,6 @@ type StreamServer interface {
 type ServerFunc func(context.Context, Conn) error
 
 // ServeStream implements StreamServer.
-//
-// ServeStream calls f(ctx, s).
 func (f ServerFunc) ServeStream(ctx context.Context, c Conn) error {
 	return f(ctx, c)
 }
@@ -44,7 +37,7 @@ func HandlerServer(h Handler) StreamServer {
 	})
 }
 
-// ListenAndServe starts an jsonrpc2 server on the given address.
+// ListenAndServe starts a jsonrpc2 server on the given address.
 //
 // If idleTimeout is non-zero, ListenAndServe exits after there are no clients for
 // this duration, otherwise it exits only on error.
@@ -74,12 +67,13 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Max duration: ~290 years; surely that's long enough.
 	const forever = 1<<63 - 1
 	if idleTimeout <= 0 {
 		idleTimeout = forever
 	}
 	connTimer := time.NewTimer(idleTimeout)
+
+	framer := HeaderFramer()
 
 	newConns := make(chan net.Conn)
 	doneListening := make(chan error)
@@ -106,11 +100,10 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 		case netConn := <-newConns:
 			activeConns++
 			connTimer.Stop()
-			stream := NewStream(netConn)
+			conn := NewConn(framer.Reader(netConn), framer.Writer(netConn), netConn)
 			go func() {
-				conn := NewConn(stream)
 				serveErr := server.ServeStream(ctx, conn)
-				closeErr := stream.Close()
+				closeErr := conn.Close()
 				closedConns <- errors.Join(serveErr, closeErr)
 			}()
 
@@ -118,7 +111,6 @@ func Serve(ctx context.Context, ln net.Listener, server StreamServer, idleTimeou
 			return err
 
 		case <-closedConns:
-
 			activeConns--
 			if activeConns == 0 {
 				connTimer.Reset(idleTimeout)

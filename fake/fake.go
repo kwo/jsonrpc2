@@ -20,9 +20,6 @@ type Connector interface {
 }
 
 // connList tracks closers to run when a testserver is closed.
-//
-// This is a convenience, so that callers don't have to worry about closing each
-// connection.
 type connList struct {
 	mu    sync.Mutex
 	conns []jsonrpc2.Conn
@@ -34,7 +31,6 @@ func (l *connList) add(conn jsonrpc2.Conn) {
 	l.mu.Unlock()
 }
 
-// Close closes conns.
 func (l *connList) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -49,8 +45,6 @@ func (l *connList) Close() error {
 
 // TCPServer is a helper for executing tests against a remote jsonrpc2
 // connection.
-//
-// Once initialized, its Addr field may be used to connect a jsonrpc2 client.
 type TCPServer struct {
 	*connList
 
@@ -61,8 +55,6 @@ type TCPServer struct {
 
 // NewTCPServer returns a new test server listening on local tcp port and
 // serving incoming jsonrpc2 streams using the provided stream server.
-//
-// It panics on any error.
 func NewTCPServer(ctx context.Context, server jsonrpc2.StreamServer, framer jsonrpc2.Framer) *TCPServer {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
@@ -71,10 +63,10 @@ func NewTCPServer(ctx context.Context, server jsonrpc2.StreamServer, framer json
 	}
 
 	if framer == nil {
-		framer = jsonrpc2.NewStream
+		framer = jsonrpc2.HeaderFramer()
 	}
 
-	go jsonrpc2.Serve(ctx, ln, server, 0) //nolint:errcheck // fire-and-forget goroutine
+	go jsonrpc2.Serve(ctx, ln, server, 0) //nolint:errcheck
 
 	return &TCPServer{
 		connList: &connList{},
@@ -92,7 +84,7 @@ func (s *TCPServer) Connect(ctx context.Context) jsonrpc2.Conn {
 		panic(fmt.Sprintf("servertest: failed to connect to test instance: %v", err))
 	}
 
-	conn := jsonrpc2.NewConn(s.framer(netConn))
+	conn := jsonrpc2.NewConn(s.framer.Reader(netConn), s.framer.Writer(netConn), netConn)
 	s.add(conn)
 
 	return conn
@@ -109,7 +101,7 @@ type PipeServer struct {
 // NewPipeServer returns a test server that can be connected to via io.Pipes.
 func NewPipeServer(_ context.Context, server jsonrpc2.StreamServer, framer jsonrpc2.Framer) *PipeServer {
 	if framer == nil {
-		framer = jsonrpc2.NewRawStream
+		framer = jsonrpc2.RawFramer()
 	}
 
 	return &PipeServer{
@@ -123,13 +115,11 @@ func NewPipeServer(_ context.Context, server jsonrpc2.StreamServer, framer jsonr
 func (s *PipeServer) Connect(ctx context.Context) jsonrpc2.Conn {
 	sPipe, cPipe := net.Pipe()
 
-	serverStream := s.framer(sPipe)
-	serverConn := jsonrpc2.NewConn(serverStream)
+	serverConn := jsonrpc2.NewConn(s.framer.Reader(sPipe), s.framer.Writer(sPipe), sPipe)
 	s.add(serverConn)
-	go s.server.ServeStream(ctx, serverConn) //nolint:errcheck // fire-and-forget goroutine
+	go s.server.ServeStream(ctx, serverConn) //nolint:errcheck
 
-	clientStream := s.framer(cPipe)
-	clientConn := jsonrpc2.NewConn(clientStream)
+	clientConn := jsonrpc2.NewConn(s.framer.Reader(cPipe), s.framer.Writer(cPipe), cPipe)
 	s.add(clientConn)
 
 	return clientConn
